@@ -9,25 +9,25 @@ import (
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
-	"github.com/docker/docker/pkg/locker"
+	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
-func ProviderFromRef(ref string) (ocispec.Descriptor, content.Provider, error) {
+func ProviderFromRef(ref string) (ocispecs.Descriptor, content.Provider, error) {
 	remote := docker.NewResolver(docker.ResolverOptions{
 		Client: http.DefaultClient,
 	})
 
 	name, desc, err := remote.Resolve(context.TODO(), ref)
 	if err != nil {
-		return ocispec.Descriptor{}, nil, err
+		return ocispecs.Descriptor{}, nil, err
 	}
 
 	fetcher, err := remote.Fetcher(context.TODO(), name)
 	if err != nil {
-		return ocispec.Descriptor{}, nil, err
+		return ocispecs.Descriptor{}, nil, err
 	}
 	return desc, FromFetcher(fetcher), nil
 }
@@ -37,15 +37,19 @@ func IngesterFromRef(ref string) (content.Ingester, error) {
 		Client: http.DefaultClient,
 	})
 
-	pusher, err := remote.Pusher(context.TODO(), ref)
+	p, err := remote.Pusher(context.TODO(), ref)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ingester{
 		locker: locker.New(),
-		pusher: pusher,
+		pusher: &pusher{p},
 	}, nil
+}
+
+type pusher struct {
+	remotes.Pusher
 }
 
 type ingester struct {

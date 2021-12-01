@@ -3,6 +3,7 @@ package integration
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -22,16 +22,26 @@ import (
 const buildkitdConfigFile = "buildkitd.toml"
 
 type backend struct {
-	address  string
-	rootless bool
+	address           string
+	containerdAddress string
+	rootless          bool
+	snapshotter       string
 }
 
 func (b backend) Address() string {
 	return b.address
 }
 
+func (b backend) ContainerdAddress() string {
+	return b.containerdAddress
+}
+
 func (b backend) Rootless() bool {
 	return b.rootless
+}
+
+func (b backend) Snapshotter() string {
+	return b.snapshotter
 }
 
 type sandbox struct {
@@ -40,6 +50,11 @@ type sandbox struct {
 	logs    map[string]*bytes.Buffer
 	cleanup *multiCloser
 	mv      matrixValue
+	ctx     context.Context
+}
+
+func (sb *sandbox) Context() context.Context {
+	return sb.ctx
 }
 
 func (sb *sandbox) PrintLogs(t *testing.T) {
@@ -71,7 +86,7 @@ func (sb *sandbox) Value(k string) interface{} {
 	return sb.mv.values[k].value
 }
 
-func newSandbox(w Worker, mirror string, mv matrixValue) (s Sandbox, cl func() error, err error) {
+func newSandbox(ctx context.Context, w Worker, mirror string, mv matrixValue) (s Sandbox, cl func() error, err error) {
 	cfg := &BackendConfig{
 		Logs: make(map[string]*bytes.Buffer),
 	}
@@ -108,7 +123,7 @@ func newSandbox(w Worker, mirror string, mv matrixValue) (s Sandbox, cl func() e
 		cfg.ConfigFile = filepath.Join(dir, buildkitdConfigFile)
 	}
 
-	b, closer, err := w.New(cfg)
+	b, closer, err := w.New(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -119,6 +134,7 @@ func newSandbox(w Worker, mirror string, mv matrixValue) (s Sandbox, cl func() e
 		logs:    cfg.Logs,
 		cleanup: deferF,
 		mv:      mv,
+		ctx:     ctx,
 	}, cl, nil
 }
 
@@ -130,7 +146,7 @@ func getBuildkitdAddr(tmpdir string) string {
 	return address
 }
 
-func runBuildkitd(conf *BackendConfig, args []string, logs map[string]*bytes.Buffer, uid, gid int) (address string, cl func() error, err error) {
+func runBuildkitd(ctx context.Context, conf *BackendConfig, args []string, logs map[string]*bytes.Buffer, uid, gid int, extraEnv []string) (address string, cl func() error, err error) {
 	deferF := &multiCloser{}
 	cl = deferF.F()
 
@@ -166,17 +182,19 @@ func runBuildkitd(conf *BackendConfig, args []string, logs map[string]*bytes.Buf
 	args = append(args, "--root", tmpdir, "--addr", address, "--debug")
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Env = append(os.Environ(), "BUILDKIT_DEBUG_EXEC_OUTPUT=1", "BUILDKIT_DEBUG_PANIC_ON_ERROR=1", "TMPDIR="+filepath.Join(tmpdir, "tmp"))
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // stretch sudo needs this for sigterm
+	if runtime.GOOS != "windows" {
+		cmd.Env = append(cmd.Env, "BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF=true")
 	}
+	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.SysProcAttr = getSysProcAttr()
 
-	if stop, err := startCmd(cmd, logs); err != nil {
+	stop, err := startCmd(cmd, logs)
+	if err != nil {
 		return "", nil, err
-	} else {
-		deferF.append(stop)
 	}
+	deferF.append(stop)
 
-	if err := waitUnix(address, 5*time.Second); err != nil {
+	if err := waitUnix(address, 15*time.Second); err != nil {
 		return "", nil, err
 	}
 
@@ -199,11 +217,21 @@ func runBuildkitd(conf *BackendConfig, args []string, logs map[string]*bytes.Buf
 }
 
 func rootlessSupported(uid int) bool {
-	cmd := exec.Command("sudo", "-u", fmt.Sprintf("#%d", uid), "-i", "--", "unshare", "-U", "true")
+	cmd := exec.Command("sudo", "-u", fmt.Sprintf("#%d", uid), "-i", "--", "exec", "unshare", "-U", "true")
 	b, err := cmd.CombinedOutput()
 	if err != nil {
 		logrus.Warnf("rootless mode is not supported on this host: %v (%s)", err, string(b))
 		return false
 	}
 	return true
+}
+
+func printLogs(logs map[string]*bytes.Buffer, f func(args ...interface{})) {
+	for name, l := range logs {
+		f(name)
+		s := bufio.NewScanner(l)
+		for s.Scan() {
+			f(s.Text())
+		}
+	}
 }

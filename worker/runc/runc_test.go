@@ -1,3 +1,4 @@
+//go:build linux && !no_runc_worker
 // +build linux,!no_runc_worker
 
 package runc
@@ -12,8 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/containerd/containerd/namespaces"
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/overlay"
 	"github.com/moby/buildkit/cache"
@@ -22,9 +23,9 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
-	"github.com/moby/buildkit/source"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/worker/base"
+	"github.com/moby/buildkit/worker/tests"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +41,7 @@ func newWorkerOpt(t *testing.T, processMode oci.ProcessMode) (base.WorkerOpt, fu
 		},
 	}
 	rootless := false
-	workerOpt, err := NewWorkerOpt(tmpdir, snFactory, rootless, processMode, nil, nil, netproviders.Opt{Mode: "host"}, nil, "")
+	workerOpt, err := NewWorkerOpt(tmpdir, snFactory, rootless, processMode, nil, nil, netproviders.Opt{Mode: "host"}, nil, "", "", nil, "")
 	require.NoError(t, err)
 
 	return workerOpt, cleanup
@@ -58,35 +59,21 @@ func checkRequirement(t *testing.T) {
 	}
 }
 
-func newCtx(s string) context.Context {
-	return namespaces.WithNamespace(context.Background(), s)
-}
-
-func newBusyboxSourceSnapshot(ctx context.Context, t *testing.T, w *base.Worker, sm *session.Manager) cache.ImmutableRef {
-	img, err := source.NewImageIdentifier("docker.io/library/busybox:latest")
-	require.NoError(t, err)
-	src, err := w.SourceManager.Resolve(ctx, img, sm)
-	require.NoError(t, err)
-	snap, err := src.Snapshot(ctx)
-	require.NoError(t, err)
-	return snap
-}
-
 func TestRuncWorker(t *testing.T) {
 	t.Parallel()
 	checkRequirement(t)
 
 	workerOpt, cleanupWorkerOpt := newWorkerOpt(t, oci.ProcessSandbox)
 	defer cleanupWorkerOpt()
-	w, err := base.NewWorker(workerOpt)
+	w, err := base.NewWorker(context.TODO(), workerOpt)
 	require.NoError(t, err)
 
-	ctx := newCtx("buildkit-test")
+	ctx := tests.NewCtx("buildkit-test")
 	sm, err := session.NewManager()
 	require.NoError(t, err)
-	snap := newBusyboxSourceSnapshot(ctx, t, w, sm)
+	snap := tests.NewBusyboxSourceSnapshot(ctx, t, w, sm)
 
-	mounts, err := snap.Mount(ctx, false)
+	mounts, err := snap.Mount(ctx, true, nil)
 	require.NoError(t, err)
 
 	lm := snapshot.LocalMounter(mounts)
@@ -107,11 +94,11 @@ func TestRuncWorker(t *testing.T) {
 	lm.Unmount()
 	require.NoError(t, err)
 
-	du, err := w.CacheManager.DiskUsage(ctx, client.DiskUsageInfo{})
+	du, err := w.CacheMgr.DiskUsage(ctx, client.DiskUsageInfo{})
 	require.NoError(t, err)
 
 	// for _, d := range du {
-	// 	fmt.Printf("du: %+v\n", d)
+	// 	t.Logf("du: %+v\n", d)
 	// }
 
 	for _, d := range du {
@@ -124,16 +111,16 @@ func TestRuncWorker(t *testing.T) {
 	}
 
 	stderr := bytes.NewBuffer(nil)
-	err = w.Executor.Exec(ctx, meta, snap, nil, nil, nil, &nopCloser{stderr})
+	err = w.WorkerOpt.Executor.Run(ctx, "", execMount(snap, true), nil, executor.ProcessInfo{Meta: meta, Stderr: &nopCloser{stderr}}, nil)
 	require.Error(t, err) // Read-only root
 	// typical error is like `mkdir /.../rootfs/proc: read-only file system`.
 	// make sure the error is caused before running `echo foo > /bar`.
 	require.Contains(t, stderr.String(), "read-only file system")
 
-	root, err := w.CacheManager.New(ctx, snap)
+	root, err := w.CacheMgr.New(ctx, snap, nil, cache.CachePolicyRetain)
 	require.NoError(t, err)
 
-	err = w.Executor.Exec(ctx, meta, root, nil, nil, nil, &nopCloser{stderr})
+	err = w.WorkerOpt.Executor.Run(ctx, "", execMount(root, false), nil, executor.ProcessInfo{Meta: meta, Stderr: &nopCloser{stderr}}, nil)
 	require.NoError(t, err)
 
 	meta = executor.Meta{
@@ -141,13 +128,13 @@ func TestRuncWorker(t *testing.T) {
 		Cwd:  "/",
 	}
 
-	err = w.Executor.Exec(ctx, meta, root, nil, nil, nil, &nopCloser{stderr})
+	err = w.WorkerOpt.Executor.Run(ctx, "", execMount(root, false), nil, executor.ProcessInfo{Meta: meta, Stderr: &nopCloser{stderr}}, nil)
 	require.NoError(t, err)
 
 	rf, err := root.Commit(ctx)
 	require.NoError(t, err)
 
-	mounts, err = rf.Mount(ctx, false)
+	mounts, err = rf.Mount(ctx, true, nil)
 	require.NoError(t, err)
 
 	lm = snapshot.LocalMounter(mounts)
@@ -170,10 +157,28 @@ func TestRuncWorker(t *testing.T) {
 	err = snap.Release(ctx)
 	require.NoError(t, err)
 
-	du2, err := w.CacheManager.DiskUsage(ctx, client.DiskUsageInfo{})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(du2)-len(du))
+	retry := 0
+	var du2 []*client.UsageInfo
+	for {
+		du2, err = w.CacheMgr.DiskUsage(ctx, client.DiskUsageInfo{})
+		require.NoError(t, err)
+		if len(du2)-len(du) != 1 && retry == 0 {
+			t.Logf("invalid expected size: du1: %+v du2: %+v", formatDiskUsage(du), formatDiskUsage(du2))
+			time.Sleep(300 * time.Millisecond) // make race non-fatal if it fixes itself
+			retry++
+			continue
+		}
+		break
+	}
+	require.Equal(t, 1, len(du2)-len(du), "du1: %+v du2: %+v", formatDiskUsage(du), formatDiskUsage(du2))
+}
 
+func formatDiskUsage(du []*client.UsageInfo) string {
+	buf := new(bytes.Buffer)
+	for _, d := range du {
+		fmt.Fprintf(buf, "%+v ", d)
+	}
+	return buf.String()
 }
 
 func TestRuncWorkerNoProcessSandbox(t *testing.T) {
@@ -182,14 +187,14 @@ func TestRuncWorkerNoProcessSandbox(t *testing.T) {
 
 	workerOpt, cleanupWorkerOpt := newWorkerOpt(t, oci.NoProcessSandbox)
 	defer cleanupWorkerOpt()
-	w, err := base.NewWorker(workerOpt)
+	w, err := base.NewWorker(context.TODO(), workerOpt)
 	require.NoError(t, err)
 
-	ctx := newCtx("buildkit-test")
+	ctx := tests.NewCtx("buildkit-test")
 	sm, err := session.NewManager()
 	require.NoError(t, err)
-	snap := newBusyboxSourceSnapshot(ctx, t, w, sm)
-	root, err := w.CacheManager.New(ctx, snap)
+	snap := tests.NewBusyboxSourceSnapshot(ctx, t, w, sm)
+	root, err := w.CacheMgr.New(ctx, snap, nil)
 	require.NoError(t, err)
 
 	// ensure the procfs is shared
@@ -202,9 +207,33 @@ func TestRuncWorkerNoProcessSandbox(t *testing.T) {
 	}
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
-	err = w.Executor.Exec(ctx, meta, root, nil, nil, &nopCloser{stdout}, &nopCloser{stderr})
+	err = w.WorkerOpt.Executor.Run(ctx, "", execMount(root, false), nil, executor.ProcessInfo{Meta: meta, Stdout: &nopCloser{stdout}, Stderr: &nopCloser{stderr}}, nil)
 	require.NoError(t, err, fmt.Sprintf("stdout=%q, stderr=%q", stdout.String(), stderr.String()))
 	require.Equal(t, string(selfCmdline), stdout.String())
+}
+
+func TestRuncWorkerExec(t *testing.T) {
+	t.Parallel()
+	checkRequirement(t)
+
+	workerOpt, cleanupWorkerOpt := newWorkerOpt(t, oci.ProcessSandbox)
+	defer cleanupWorkerOpt()
+	w, err := base.NewWorker(context.TODO(), workerOpt)
+	require.NoError(t, err)
+
+	tests.TestWorkerExec(t, w)
+}
+
+func TestRuncWorkerExecFailures(t *testing.T) {
+	t.Parallel()
+	checkRequirement(t)
+
+	workerOpt, cleanupWorkerOpt := newWorkerOpt(t, oci.ProcessSandbox)
+	defer cleanupWorkerOpt()
+	w, err := base.NewWorker(context.TODO(), workerOpt)
+	require.NoError(t, err)
+
+	tests.TestWorkerExecFailures(t, w)
 }
 
 type nopCloser struct {
@@ -213,4 +242,16 @@ type nopCloser struct {
 
 func (n *nopCloser) Close() error {
 	return nil
+}
+
+func execMount(m cache.Mountable, readonly bool) executor.Mount {
+	return executor.Mount{Src: &mountable{m: m}, Readonly: readonly}
+}
+
+type mountable struct {
+	m cache.Mountable
+}
+
+func (m *mountable) Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
+	return m.m.Mount(ctx, readonly, nil)
 }

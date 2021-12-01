@@ -1,3 +1,4 @@
+//go:build linux || darwin || freebsd || solaris
 // +build linux darwin freebsd solaris
 
 /*
@@ -48,5 +49,6 @@ func newHardlinkKey(fi os.FileInfo) (hardlinkKey, error) {
 		return hardlinkKey{}, errNotAHardLink
 	}
 
+	//nolint:unconvert
 	return hardlinkKey{dev: uint64(sys.Dev), inode: uint64(sys.Ino)}, nil
 }

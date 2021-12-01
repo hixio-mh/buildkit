@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package system
@@ -11,6 +12,8 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	if err == nil || (err != nil && err.Error() != "The specified path is not on the system drive (C:)") {
 		t.Fatalf("Expected error for d:")
 	}
+
+	var path string
 
 	// Single character is unchanged
 	if path, err = CheckSystemDriveAndRemoveDriveLetter("z"); err != nil {
