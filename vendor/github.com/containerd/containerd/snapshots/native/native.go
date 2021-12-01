@@ -18,31 +18,17 @@ package native
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/platforms"
-	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 
 	"github.com/containerd/continuity/fs"
 	"github.com/pkg/errors"
 )
-
-func init() {
-	plugin.Register(&plugin.Registration{
-		Type: plugin.SnapshotPlugin,
-		ID:   "native",
-		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
-			ic.Meta.Platforms = append(ic.Meta.Platforms, platforms.DefaultSpec())
-			return NewSnapshotter(ic.Root)
-		},
-	})
-}
 
 type snapshotter struct {
 	root string
@@ -247,7 +233,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	)
 
 	if kind == snapshots.KindActive || parent == "" {
-		td, err = ioutil.TempDir(filepath.Join(o.root, "snapshots"), "new-")
+		td, err = os.MkdirTemp(filepath.Join(o.root, "snapshots"), "new-")
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create temp dir")
 		}
@@ -340,12 +326,9 @@ func (o *snapshotter) mounts(s storage.Snapshot) []mount.Mount {
 
 	return []mount.Mount{
 		{
-			Source: source,
-			Type:   "bind",
-			Options: []string{
-				roFlag,
-				"rbind",
-			},
+			Source:  source,
+			Type:    mountType,
+			Options: append(defaultMountOptions, roFlag),
 		},
 	}
 }

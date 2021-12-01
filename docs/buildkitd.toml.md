@@ -1,4 +1,4 @@
-# /etc/buildkit/buildkitd.toml
+# buildkitd.toml
 
 ## NAME
 
@@ -10,6 +10,9 @@ buildkitd.toml - configuration file for buildkitd
 The TOML file used to configure the buildkitd daemon settings has a short
 list of global settings followed by a series of sections for specific areas
 of daemon configuration.
+
+The file path is `/etc/buildkit/buildkitd.toml` for rootful mode,
+`~/.config/buildkit/buildkitd.toml` for rootless mode.
 
 ## EXAMPLE
 
@@ -49,6 +52,12 @@ insecure-entitlements = [ "network.host", "security.insecure" ]
   # alternate OCI worker binary name(example 'crun'), by default either 
   # buildkit-runc or runc binary is used
   binary = ""
+  # name of the apparmor profile that should be used to constrain build containers.
+  # the profile should already be loaded (by a higher level system) before creating a worker.
+  apparmor-profile = ""
+  # limit the number of parallel build steps that can run at the same time
+  max-parallelism = 4
+
   [worker.oci.labels]
     "foo" = "bar"
 
@@ -66,7 +75,7 @@ insecure-entitlements = [ "network.host", "security.insecure" ]
   platforms = [ "linux/amd64", "linux/arm64" ]
   namespace = "buildkit"
   gc = true
-  # gckeepstorage sets storage limit for default gc profile, in bytes.
+  # gckeepstorage sets storage limit for default gc profile, in MB.
   gckeepstorage = 9000
   [worker.containerd.labels]
     "foo" = "bar"

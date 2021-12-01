@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/session"
 	digest "github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -53,10 +54,11 @@ func TestSingleLevelActiveGraph(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g0.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g0.Vertex.(*vertex).execCallCount, int64(1))
@@ -79,9 +81,10 @@ func TestSingleLevelActiveGraph(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g0.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g0.Vertex.(*vertex).execCallCount, int64(1))
@@ -110,9 +113,10 @@ func TestSingleLevelActiveGraph(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g0.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g0.Vertex.(*vertex).execCallCount, int64(1))
@@ -145,9 +149,10 @@ func TestSingleLevelActiveGraph(t *testing.T) {
 	}
 	g3.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j3.Build(ctx, g3)
+	res, bi, err = j3.Build(ctx, g3)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result3")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g3.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g3.Vertex.(*vertex).execCallCount, int64(1))
@@ -187,16 +192,18 @@ func TestSingleLevelActiveGraph(t *testing.T) {
 	eg, _ := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
-		res, err := j4.Build(ctx, g4)
+		res, bi, err := j4.Build(ctx, g4)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result4")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
 	eg.Go(func() error {
-		res, err := j5.Build(ctx, g4)
+		res, bi, err := j5.Build(ctx, g4)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result4")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
@@ -233,9 +240,10 @@ func TestSingleLevelCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -259,9 +267,10 @@ func TestSingleLevelCache(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result1")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g1.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g1.Vertex.(*vertex).execCallCount, int64(1))
@@ -289,9 +298,10 @@ func TestSingleLevelCache(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, *g0.Vertex.(*vertex).cacheCallCount, int64(1))
 	require.Equal(t, *g0.Vertex.(*vertex).execCallCount, int64(1))
@@ -357,16 +367,18 @@ func TestSingleLevelCacheParallel(t *testing.T) {
 	eg, _ := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
-		res, err := j0.Build(ctx, g0)
+		res, bi, err := j0.Build(ctx, g0)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result0")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
 	eg.Go(func() error {
-		res, err := j1.Build(ctx, g1)
+		res, bi, err := j1.Build(ctx, g1)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result0")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
@@ -450,16 +462,18 @@ func TestMultiLevelCacheParallel(t *testing.T) {
 	eg, _ := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
-		res, err := j0.Build(ctx, g0)
+		res, bi, err := j0.Build(ctx, g0)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result0")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
 	eg.Go(func() error {
-		res, err := j1.Build(ctx, g1)
+		res, bi, err := j1.Build(ctx, g1)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result0")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
@@ -502,7 +516,7 @@ func TestSingleCancelCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	_, err = j0.Build(ctx, g0)
+	_, _, err = j0.Build(ctx, g0)
 	require.Error(t, err)
 	require.Equal(t, true, errors.Is(err, context.Canceled))
 
@@ -545,7 +559,7 @@ func TestSingleCancelExec(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	_, err = j1.Build(ctx, g1)
+	_, _, err = j1.Build(ctx, g1)
 	require.Error(t, err)
 	require.Equal(t, true, errors.Is(err, context.Canceled))
 
@@ -598,7 +612,7 @@ func TestSingleCancelParallel(t *testing.T) {
 			}),
 		}
 
-		_, err = j.Build(ctx, g)
+		_, _, err = j.Build(ctx, g)
 		close(firstErrored)
 		require.Error(t, err)
 		require.Equal(t, true, errors.Is(err, context.Canceled))
@@ -622,9 +636,10 @@ func TestSingleCancelParallel(t *testing.T) {
 		}
 		<-firstReady
 
-		res, err := j.Build(ctx, g)
+		res, bi, err := j.Build(ctx, g)
 		require.NoError(t, err)
 		require.Equal(t, unwrap(res), "result2")
+		require.Equal(t, len(bi), 0)
 		return err
 	})
 
@@ -671,9 +686,10 @@ func TestMultiLevelCalculation(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g)
+	res, bi, err := j0.Build(ctx, g)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 42) // 1 + 2*(7 + 2) + 2 + 2 + 19
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -709,9 +725,10 @@ func TestMultiLevelCalculation(t *testing.T) {
 			},
 		}),
 	}
-	res, err = j1.Build(ctx, g2)
+	res, bi, err = j1.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 42)
+	require.Equal(t, len(bi), 0)
 
 }
 
@@ -744,9 +761,10 @@ func TestHugeGraph(t *testing.T) {
 	// printGraph(g, "")
 	g.Vertex.(*vertexSum).setupCallCounters()
 
-	res, err := j0.Build(ctx, g)
+	res, bi, err := j0.Build(ctx, g)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), v)
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(nodes), *g.Vertex.(*vertexSum).cacheCallCount)
 	// execCount := *g.Vertex.(*vertexSum).execCallCount
 	// require.True(t, execCount < 1000)
@@ -766,9 +784,10 @@ func TestHugeGraph(t *testing.T) {
 	}()
 
 	g.Vertex.(*vertexSum).setupCallCounters()
-	res, err = j1.Build(ctx, g)
+	res, bi, err = j1.Build(ctx, g)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), v)
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(nodes), *g.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(0), *g.Vertex.(*vertexSum).execCallCount)
@@ -822,9 +841,10 @@ func TestOptimizedCacheAccess(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(3), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(3), *g0.Vertex.(*vertex).execCallCount)
@@ -868,9 +888,10 @@ func TestOptimizedCacheAccess(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(3), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(1), *g1.Vertex.(*vertex).execCallCount)
@@ -930,9 +951,10 @@ func TestOptimizedCacheAccess2(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(3), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(3), *g0.Vertex.(*vertex).execCallCount)
@@ -977,9 +999,10 @@ func TestOptimizedCacheAccess2(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(3), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(1), *g1.Vertex.(*vertex).execCallCount)
@@ -1023,9 +1046,10 @@ func TestOptimizedCacheAccess2(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(3), *g2.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g2.Vertex.(*vertex).execCallCount)
@@ -1073,9 +1097,10 @@ func TestSlowCache(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -1107,9 +1132,10 @@ func TestSlowCache(t *testing.T) {
 		}),
 	}
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -1165,9 +1191,10 @@ func TestParallelInputs(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -1219,7 +1246,7 @@ func TestErrorReturns(t *testing.T) {
 		}),
 	}
 
-	_, err = j0.Build(ctx, g0)
+	_, _, err = j0.Build(ctx, g0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "error-from-test")
 
@@ -1260,7 +1287,7 @@ func TestErrorReturns(t *testing.T) {
 		}),
 	}
 
-	_, err = j1.Build(ctx, g1)
+	_, _, err = j1.Build(ctx, g1)
 	require.Error(t, err)
 	require.Equal(t, true, errors.Is(err, context.Canceled))
 
@@ -1301,7 +1328,7 @@ func TestErrorReturns(t *testing.T) {
 		}),
 	}
 
-	_, err = j2.Build(ctx, g2)
+	_, _, err = j2.Build(ctx, g2)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exec-error-from-test")
 
@@ -1346,9 +1373,10 @@ func TestMultipleCacheSources(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(0), cacheManager.loadCounter)
 
 	require.NoError(t, j0.Discard())
@@ -1388,9 +1416,10 @@ func TestMultipleCacheSources(t *testing.T) {
 		}),
 	}
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(1), cacheManager.loadCounter)
 	require.Equal(t, int64(0), cacheManager2.loadCounter)
 
@@ -1416,9 +1445,10 @@ func TestMultipleCacheSources(t *testing.T) {
 		}),
 	}
 
-	res, err = j1.Build(ctx, g2)
+	res, bi, err = j1.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result2")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), cacheManager.loadCounter)
 	require.Equal(t, int64(0), cacheManager2.loadCounter)
 
@@ -1460,9 +1490,10 @@ func TestRepeatBuildWithIgnoreCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).execCallCount)
 
@@ -1498,9 +1529,10 @@ func TestRepeatBuildWithIgnoreCache(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0-1")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g1.Vertex.(*vertex).execCallCount)
 
@@ -1535,9 +1567,10 @@ func TestRepeatBuildWithIgnoreCache(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0-2")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), *g2.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g2.Vertex.(*vertex).execCallCount)
 
@@ -1584,9 +1617,10 @@ func TestIgnoreCacheResumeFromSlowCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).execCallCount)
 
@@ -1624,9 +1658,10 @@ func TestIgnoreCacheResumeFromSlowCache(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(2), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(1), *g1.Vertex.(*vertex).execCallCount)
 
@@ -1661,10 +1696,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	// match by vertex digest
 	j1, err := l.NewJob("j1")
@@ -1686,10 +1721,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result1")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -1715,10 +1750,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result2")
+	require.Equal(t, len(bi), 0)
 
 	// match by cache key
 	j3, err := l.NewJob("j3")
@@ -1740,10 +1775,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g3.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j3.Build(ctx, g3)
+	res, bi, err = j3.Build(ctx, g3)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result3")
+	require.Equal(t, len(bi), 0)
 
 	// add another ignorecache merges now
 
@@ -1766,10 +1801,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g4.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j4.Build(ctx, g4)
+	res, bi, err = j4.Build(ctx, g4)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result3")
+	require.Equal(t, len(bi), 0)
 
 	// add another !ignorecache merges now
 
@@ -1791,10 +1826,10 @@ func TestParallelBuildsIgnoreCache(t *testing.T) {
 	}
 	g5.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j5.Build(ctx, g5)
+	res, bi, err = j5.Build(ctx, g5)
 	require.NoError(t, err)
-
 	require.Equal(t, unwrap(res), "result3")
+	require.Equal(t, len(bi), 0)
 }
 
 func TestSubbuild(t *testing.T) {
@@ -1826,9 +1861,10 @@ func TestSubbuild(t *testing.T) {
 	}
 	g0.Vertex.(*vertexSum).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 8)
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g0.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertexSum).execCallCount)
@@ -1847,9 +1883,10 @@ func TestSubbuild(t *testing.T) {
 
 	g0.Vertex.(*vertexSum).setupCallCounters()
 
-	res, err = j1.Build(ctx, g0)
+	res, bi, err = j1.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 8)
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g0.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(0), *g0.Vertex.(*vertexSum).execCallCount)
@@ -1899,9 +1936,10 @@ func TestCacheWithSelector(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).execCallCount)
@@ -1940,9 +1978,10 @@ func TestCacheWithSelector(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(0), *g1.Vertex.(*vertex).execCallCount)
@@ -1981,9 +2020,10 @@ func TestCacheWithSelector(t *testing.T) {
 	}
 	g2.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0-1")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g2.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(1), *g2.Vertex.(*vertex).execCallCount)
@@ -2036,9 +2076,10 @@ func TestCacheSlowWithSelector(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(2), *g0.Vertex.(*vertex).execCallCount)
@@ -2080,9 +2121,10 @@ func TestCacheSlowWithSelector(t *testing.T) {
 	}
 	g1.Vertex.(*vertex).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.Equal(t, int64(2), *g1.Vertex.(*vertex).cacheCallCount)
 	require.Equal(t, int64(0), *g1.Vertex.(*vertex).execCallCount)
@@ -2122,9 +2164,10 @@ func TestCacheExporting(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 6)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -2153,9 +2196,10 @@ func TestCacheExporting(t *testing.T) {
 		}
 	}()
 
-	res, err = j1.Build(ctx, g0)
+	res, bi, err = j1.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 6)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2210,9 +2254,10 @@ func TestCacheExportingModeMin(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -2243,9 +2288,10 @@ func TestCacheExportingModeMin(t *testing.T) {
 		}
 	}()
 
-	res, err = j1.Build(ctx, g0)
+	res, bi, err = j1.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2277,9 +2323,10 @@ func TestCacheExportingModeMin(t *testing.T) {
 		}
 	}()
 
-	res, err = j2.Build(ctx, g0)
+	res, bi, err = j2.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j2.Discard())
 	j2 = nil
@@ -2359,9 +2406,10 @@ func TestSlowCacheAvoidAccess(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(0), cacheManager.loadCounter)
 
 	require.NoError(t, j0.Discard())
@@ -2378,9 +2426,10 @@ func TestSlowCacheAvoidAccess(t *testing.T) {
 		}
 	}()
 
-	res, err = j1.Build(ctx, g0)
+	res, bi, err = j1.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2460,9 +2509,10 @@ func TestSlowCacheAvoidLoadOnCache(t *testing.T) {
 	}
 	g0.Vertex.(*vertex).setupCallCounters()
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "resultmain")
+	require.Equal(t, len(bi), 0)
 	require.Equal(t, int64(0), cacheManager.loadCounter)
 
 	require.NoError(t, j0.Discard())
@@ -2533,9 +2583,10 @@ func TestSlowCacheAvoidLoadOnCache(t *testing.T) {
 		}
 	}()
 
-	res, err = j1.Build(ctx, g0)
+	res, bi, err = j1.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "resultmain")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2577,9 +2628,10 @@ func TestCacheMultipleMaps(t *testing.T) {
 			value: "result0",
 		}),
 	}
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -2613,9 +2665,10 @@ func TestCacheMultipleMaps(t *testing.T) {
 		}),
 	}
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2648,9 +2701,10 @@ func TestCacheMultipleMaps(t *testing.T) {
 		}),
 	}
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j2.Discard())
 	j2 = nil
@@ -2702,9 +2756,10 @@ func TestCacheInputMultipleMaps(t *testing.T) {
 			}},
 		}),
 	}
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	expTarget := newTestExporterTarget()
 
@@ -2743,9 +2798,10 @@ func TestCacheInputMultipleMaps(t *testing.T) {
 			}},
 		}),
 	}
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	_, err = res.CacheKeys()[0].Exporter.ExportTo(ctx, expTarget, testExporterOpts(true))
 	require.NoError(t, err)
@@ -2799,9 +2855,10 @@ func TestCacheExportingPartialSelector(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -2832,9 +2889,10 @@ func TestCacheExportingPartialSelector(t *testing.T) {
 
 	g1 := g0
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -2886,9 +2944,10 @@ func TestCacheExportingPartialSelector(t *testing.T) {
 		}),
 	}
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j2.Discard())
 	j2 = nil
@@ -2932,9 +2991,10 @@ func TestCacheExportingPartialSelector(t *testing.T) {
 		),
 	}
 
-	res, err = j3.Build(ctx, g3)
+	res, bi, err = j3.Build(ctx, g3)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result2")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j3.Discard())
 	j3 = nil
@@ -3030,9 +3090,10 @@ func TestCacheExportingMergedKey(t *testing.T) {
 		}),
 	}
 
-	res, err := j0.Build(ctx, g0)
+	res, bi, err := j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.Equal(t, unwrap(res), "result0")
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -3090,9 +3151,10 @@ func TestMergedEdgesLookup(t *testing.T) {
 			}
 			g.Vertex.(*vertexSum).setupCallCounters()
 
-			res, err := j0.Build(ctx, g)
+			res, bi, err := j0.Build(ctx, g)
 			require.NoError(t, err)
 			require.Equal(t, unwrapInt(res), 11)
+			require.Equal(t, len(bi), 0)
 			require.Equal(t, int64(7), *g.Vertex.(*vertexSum).cacheCallCount)
 			require.Equal(t, int64(0), cacheManager.loadCounter)
 
@@ -3141,12 +3203,13 @@ func TestCacheLoadError(t *testing.T) {
 	}
 	g.Vertex.(*vertexSum).setupCallCounters()
 
-	res, err := j0.Build(ctx, g)
+	res, bi, err := j0.Build(ctx, g)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
 	require.Equal(t, int64(7), *g.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(5), *g.Vertex.(*vertexSum).execCallCount)
 	require.Equal(t, int64(0), cacheManager.loadCounter)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -3165,12 +3228,13 @@ func TestCacheLoadError(t *testing.T) {
 
 	g1.Vertex.(*vertexSum).setupCallCounters()
 
-	res, err = j1.Build(ctx, g1)
+	res, bi, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
 	require.Equal(t, int64(7), *g.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(0), *g.Vertex.(*vertexSum).execCallCount)
 	require.Equal(t, int64(1), cacheManager.loadCounter)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -3191,12 +3255,13 @@ func TestCacheLoadError(t *testing.T) {
 
 	cacheManager.forceFail = true
 
-	res, err = j2.Build(ctx, g2)
+	res, bi, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.Equal(t, unwrapInt(res), 11)
 	require.Equal(t, int64(7), *g.Vertex.(*vertexSum).cacheCallCount)
 	require.Equal(t, int64(5), *g.Vertex.(*vertexSum).execCallCount)
 	require.Equal(t, int64(6), cacheManager.loadCounter)
+	require.Equal(t, len(bi), 0)
 
 	require.NoError(t, j2.Discard())
 	j2 = nil
@@ -3244,7 +3309,7 @@ func TestInputRequestDeadlock(t *testing.T) {
 		}),
 	}
 
-	_, err = j0.Build(ctx, g0)
+	_, _, err = j0.Build(ctx, g0)
 	require.NoError(t, err)
 	require.NoError(t, j0.Discard())
 	j0 = nil
@@ -3282,7 +3347,7 @@ func TestInputRequestDeadlock(t *testing.T) {
 		}),
 	}
 
-	_, err = j1.Build(ctx, g1)
+	_, _, err = j1.Build(ctx, g1)
 	require.NoError(t, err)
 	require.NoError(t, j1.Discard())
 	j1 = nil
@@ -3323,7 +3388,7 @@ func TestInputRequestDeadlock(t *testing.T) {
 		}),
 	}
 
-	_, err = j2.Build(ctx, g2)
+	_, _, err = j2.Build(ctx, g2)
 	require.NoError(t, err)
 	require.NoError(t, j2.Discard())
 	j2 = nil
@@ -3466,7 +3531,7 @@ func (v *vertex) cacheMap(ctx context.Context) error {
 	return nil
 }
 
-func (v *vertex) CacheMap(ctx context.Context, index int) (*CacheMap, bool, error) {
+func (v *vertex) CacheMap(ctx context.Context, g session.Group, index int) (*CacheMap, bool, error) {
 	if index == 0 {
 		if err := v.cacheMap(ctx); err != nil {
 			return nil, false, err
@@ -3503,11 +3568,15 @@ func (v *vertex) exec(ctx context.Context, inputs []Result) error {
 	return nil
 }
 
-func (v *vertex) Exec(ctx context.Context, inputs []Result) (outputs []Result, err error) {
+func (v *vertex) Exec(ctx context.Context, g session.Group, inputs []Result) (outputs []Result, err error) {
 	if err := v.exec(ctx, inputs); err != nil {
 		return nil, err
 	}
 	return []Result{&dummyResult{id: identity.NewID(), value: v.opt.value}}, nil
+}
+
+func (v *vertex) Acquire(ctx context.Context) (ReleaseFunc, error) {
+	return func() {}, nil
 }
 
 func (v *vertex) makeCacheMap() *CacheMap {
@@ -3516,6 +3585,7 @@ func (v *vertex) makeCacheMap() *CacheMap {
 		Deps: make([]struct {
 			Selector          digest.Digest
 			ComputeDigestFunc ResultBasedCacheFunc
+			PreprocessFunc    PreprocessFunc
 		}, len(v.Inputs())),
 	}
 	for i, f := range v.opt.slowCacheCompute {
@@ -3547,11 +3617,15 @@ func (v *vertexConst) Sys() interface{} {
 	return v
 }
 
-func (v *vertexConst) Exec(ctx context.Context, inputs []Result) (outputs []Result, err error) {
+func (v *vertexConst) Exec(ctx context.Context, g session.Group, inputs []Result) (outputs []Result, err error) {
 	if err := v.exec(ctx, inputs); err != nil {
 		return nil, err
 	}
 	return []Result{&dummyResult{id: identity.NewID(), intValue: v.value}}, nil
+}
+
+func (v *vertexConst) Acquire(ctx context.Context) (ReleaseFunc, error) {
+	return func() {}, nil
 }
 
 // vtxSum returns a vertex that ourputs sum of its inputs plus a constant
@@ -3574,7 +3648,7 @@ func (v *vertexSum) Sys() interface{} {
 	return v
 }
 
-func (v *vertexSum) Exec(ctx context.Context, inputs []Result) (outputs []Result, err error) {
+func (v *vertexSum) Exec(ctx context.Context, g session.Group, inputs []Result) (outputs []Result, err error) {
 	if err := v.exec(ctx, inputs); err != nil {
 		return nil, err
 	}
@@ -3587,6 +3661,10 @@ func (v *vertexSum) Exec(ctx context.Context, inputs []Result) (outputs []Result
 		s += r.intValue
 	}
 	return []Result{&dummyResult{id: identity.NewID(), intValue: s}}, nil
+}
+
+func (v *vertexSum) Acquire(ctx context.Context) (ReleaseFunc, error) {
+	return func() {}, nil
 }
 
 func vtxSubBuild(g Edge, opt vtxOpt) *vertexSubBuild {
@@ -3609,17 +3687,22 @@ func (v *vertexSubBuild) Sys() interface{} {
 	return v
 }
 
-func (v *vertexSubBuild) Exec(ctx context.Context, inputs []Result) (outputs []Result, err error) {
+func (v *vertexSubBuild) Exec(ctx context.Context, g session.Group, inputs []Result) (outputs []Result, err error) {
 	if err := v.exec(ctx, inputs); err != nil {
 		return nil, err
 	}
-	res, err := v.b.Build(ctx, v.g)
+	res, _, err := v.b.Build(ctx, v.g)
 	if err != nil {
 		return nil, err
 	}
 	return []Result{res}, nil
 }
 
+func (v *vertexSubBuild) Acquire(ctx context.Context) (ReleaseFunc, error) {
+	return func() {}, nil
+}
+
+//nolint:unused
 func printGraph(e Edge, pfx string) {
 	name := e.Vertex.Name()
 	fmt.Printf("%s %d %s\n", pfx, e.Index, name)
@@ -3637,6 +3720,7 @@ type dummyResult struct {
 func (r *dummyResult) ID() string                    { return r.id }
 func (r *dummyResult) Release(context.Context) error { return nil }
 func (r *dummyResult) Sys() interface{}              { return r }
+func (r *dummyResult) Clone() Result                 { return r }
 
 func testOpResolver(v Vertex, b Builder) (Op, error) {
 	if op, ok := v.Sys().(Op); ok {
@@ -3695,7 +3779,7 @@ func (cm *trackingCacheManager) Load(ctx context.Context, rec *CacheRecord) (Res
 	return cm.CacheManager.Load(ctx, rec)
 }
 
-func digestFromResult(ctx context.Context, res Result) (digest.Digest, error) {
+func digestFromResult(ctx context.Context, res Result, _ session.Group) (digest.Digest, error) {
 	return digest.FromBytes([]byte(unwrap(res))), nil
 }
 
@@ -3705,11 +3789,11 @@ func testExporterOpts(all bool) CacheExportOpt {
 		mode = CacheExportModeMax
 	}
 	return CacheExportOpt{
-		Convert: func(ctx context.Context, res Result) (*Remote, error) {
+		ResolveRemotes: func(ctx context.Context, res Result) ([]*Remote, error) {
 			if dr, ok := res.Sys().(*dummyResult); ok {
-				return &Remote{Descriptors: []ocispec.Descriptor{{
+				return []*Remote{{Descriptors: []ocispecs.Descriptor{{
 					Annotations: map[string]string{"value": fmt.Sprintf("%d", dr.intValue)},
-				}}}, nil
+				}}}}, nil
 			}
 			return nil, nil
 		},

@@ -1,8 +1,7 @@
 package snapshot
 
 import (
-	"io/ioutil"
-	"os"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/mount"
@@ -34,41 +33,32 @@ type localMounter struct {
 	release   func() error
 }
 
-func (lm *localMounter) Mount() (string, error) {
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
-
-	if lm.mounts == nil {
-		mounts, release, err := lm.mountable.Mount()
-		if err != nil {
-			return "", err
-		}
-		lm.mounts = mounts
-		lm.release = release
+// RWDirMount extracts out just a writable directory from the provided mounts and returns it.
+// It's intended to supply the directory to which changes being made to the mount can be
+// written directly. A writable directory includes an upperdir if provided an overlay or a rw
+// bind mount source. If the mount doesn't have a writable directory, an error is returned.
+func getRWDir(mounts []mount.Mount) (string, error) {
+	if len(mounts) != 1 {
+		return "", errors.New("cannot extract writable directory from zero or multiple mounts")
 	}
-
-	if len(lm.mounts) == 1 && (lm.mounts[0].Type == "bind" || lm.mounts[0].Type == "rbind") {
-		ro := false
-		for _, opt := range lm.mounts[0].Options {
-			if opt == "ro" {
-				ro = true
-				break
+	mnt := mounts[0]
+	switch mnt.Type {
+	case "overlay":
+		for _, opt := range mnt.Options {
+			if strings.HasPrefix(opt, "upperdir=") {
+				upperdir := strings.SplitN(opt, "=", 2)[1]
+				return upperdir, nil
 			}
 		}
-		if !ro {
-			return lm.mounts[0].Source, nil
+		return "", errors.New("cannot extract writable directory from overlay mount without upperdir")
+	case "bind", "rbind":
+		for _, opt := range mnt.Options {
+			if opt == "ro" {
+				return "", errors.New("cannot extract writable directory from read-only bind mount")
+			}
 		}
+		return mnt.Source, nil
+	default:
+		return "", errors.Errorf("cannot extract writable directory from unhandled mount type %q", mnt.Type)
 	}
-
-	dir, err := ioutil.TempDir("", "buildkit-mount")
-	if err != nil {
-		return "", errors.Wrap(err, "failed to create temp dir")
-	}
-
-	if err := mount.All(lm.mounts, dir); err != nil {
-		os.RemoveAll(dir)
-		return "", errors.Wrapf(err, "failed to mount %s: %+v", dir, lm.mounts)
-	}
-	lm.target = dir
-	return dir, nil
 }

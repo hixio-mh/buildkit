@@ -1,5 +1,3 @@
-// +build windows
-
 /*
    Copyright The containerd Authors.
 
@@ -52,7 +50,7 @@ func WithWindowsIgnoreFlushesDuringBoot() SpecOpts {
 	}
 }
 
-// WithWindowNetworksAllowUnqualifiedDNSQuery sets `Windows.IgnoreFlushesDuringBoot`.
+// WithWindowNetworksAllowUnqualifiedDNSQuery sets `Windows.Network.AllowUnqualifiedDNSQuery`.
 func WithWindowNetworksAllowUnqualifiedDNSQuery() SpecOpts {
 	return func(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
 		if s.Windows == nil {
@@ -74,6 +72,6 @@ func WithHostDevices(_ context.Context, _ Client, _ *containers.Container, s *Sp
 	return nil
 }
 
-func deviceFromPath(path, permissions string) (*specs.LinuxDevice, error) {
+func deviceFromPath(path string) (*specs.LinuxDevice, error) {
 	return nil, errors.New("device from path not supported on Windows")
 }

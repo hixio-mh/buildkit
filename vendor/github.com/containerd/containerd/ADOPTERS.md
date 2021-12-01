@@ -16,6 +16,10 @@ including the Balena project listed below.
 
 **_[AWS Fargate](https://aws.amazon.com/fargate)_** - uses containerd + Firecracker (noted below) as the runtime and isolation technology for containers run in the Fargate platform. Fargate is a serverless, container-native compute offering from Amazon Web Services.
 
+**_[Amazon Elastic Kubernetes Service (EKS)](https://aws.amazon.com/eks/)_** - EKS optionally offers containerd as a CRI runtime starting with Kubernetes version 1.21. In Kubernetes 1.22 the default CRI runtime will be containerd.
+
+**_[Bottlerocket](https://aws.amazon.com/bottlerocket/)_** - Bottlerocket is a Linux distribution from Amazon Web Services purpose-built for containers using containerd as the core system runtime.
+
 **_Cloud Foundry_** - The [Guardian container manager](https://github.com/cloudfoundry/guardian) for CF has been using OCI runC directly with additional code from CF managing the container image and filesystem interactions, but have recently migrated to use containerd as a replacement for the extra code they had written around runC.
 
 **_Alibaba's PouchContainer_** - The Alibaba [PouchContainer](https://github.com/alibaba/pouch) project uses containerd as its runtime for a cloud native offering that has unique isolation and image distribution capabilities.
@@ -37,6 +41,10 @@ including the Balena project listed below.
 **_Amazon Firecracker_** - The AWS [Firecracker VMM project](http://firecracker-microvm.io/) has extended containerd with a new snapshotter and v2 shim to allow containerd to drive virtualized container processes via their VMM implementation. More details on their containerd integration are available in [their GitHub project](https://github.com/firecracker-microvm/firecracker-containerd).
 
 **_Kata Containers_** - The [Kata containers](https://katacontainers.io/) lightweight-virtualized container runtime project integrates with containerd via a custom v2 shim implementation that drives the Kata container runtime.
+
+**_D2iQ Konvoy_** - D2iQ Inc [Konvoy](https://d2iq.com/products/konvoy) product uses containerd as the container runtime for its Kubernetes distribution.
+
+**_Inclavare Containers_** - [Inclavare Containers](https://github.com/alibaba/inclavare-containers) is an innovation of container runtime with the novel approach for launching protected containers in hardware-assisted Trusted Execution Environment (TEE) technology, aka Enclave, which can prevent the untrusted entity, such as Cloud Service Provider (CSP), from accessing the sensitive and confidential assets in use.
 
 **_Other Projects_** - While the above list provides a cross-section of well known uses of containerd, the simplicity and clear API layer for containerd has inspired many smaller projects around providing simple container management platforms. Several examples of building higher layer functionality on top of the containerd base have come from various containerd community participants:
  - Michael Crosby's [boss](https://github.com/crosbymichael/boss) project,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/moby/buildkit/client"
@@ -61,8 +62,8 @@ func printKV(w io.Writer, k string, v interface{}) {
 func printVerbose(tw *tabwriter.Writer, du []*client.UsageInfo) {
 	for _, di := range du {
 		printKV(tw, "ID", di.ID)
-		if di.Parent != "" {
-			printKV(tw, "Parent", di.Parent)
+		if len(di.Parents) > 0 {
+			printKV(tw, "Parents", strings.Join(di.Parents, ";"))
 		}
 		printKV(tw, "Created at", di.CreatedAt)
 		printKV(tw, "Mutable", di.Mutable)
@@ -128,8 +129,6 @@ func printSummary(tw *tabwriter.Writer, du []*client.UsageInfo) {
 			shared += di.Size
 		}
 	}
-
-	tw = tabwriter.NewWriter(os.Stdout, 1, 8, 1, '\t', 0)
 
 	if shared > 0 {
 		fmt.Fprintf(tw, "Shared:\t%.2f\n", units.Bytes(shared))
