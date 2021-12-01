@@ -42,11 +42,20 @@ require (
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
+dependabot/go_modules/github.com/opencontainers/image-spec-1.0.2
+	github.com/opencontainers/image-spec v1.0.2
+	github.com/opencontainers/runc v1.0.0-rc10
+	github.com/opencontainers/runtime-spec v1.0.2
+	github.com/opencontainers/selinux v1.5.1 // indirect
+	github.com/opentracing-contrib/go-stdlib v0.0.0-20171029140428-b1a47cfbdd75
+	github.com/opentracing/opentracing-go v1.1.0
+
 	github.com/opencontainers/image-spec v1.0.2-0.20210819154149-5ad6f50d6283
 	github.com/opencontainers/runc v1.0.2
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	github.com/opencontainers/selinux v1.10.0
 	github.com/pelletier/go-toml v1.9.4
+master
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/profile v1.5.0
 	github.com/serialx/hashring v0.0.0-20190422032157-8b2912629002

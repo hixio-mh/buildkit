@@ -387,8 +387,12 @@ github.com/morikuni/aec
 # github.com/opencontainers/go-digest v1.0.0
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
+dependabot/go_modules/github.com/opencontainers/image-spec-1.0.2
+# github.com/opencontainers/image-spec v1.0.2
+
 # github.com/opencontainers/image-spec v1.0.2-0.20210819154149-5ad6f50d6283
 ## explicit
+ master
 github.com/opencontainers/image-spec/identity
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
